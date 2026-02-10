@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import sys
 import subprocess
 import threading
@@ -69,15 +70,16 @@ class AutoRateSwitcher(Adw.Application):
         self.current_rate = "Unknown"
         self.running = True
         self.auto_mode = True
-        self.strict_mode = False # Default: Off (Safer)
+        self.strict_mode = False 
         self.tray_process = None
+        self.manual_buttons = [] # Store buttons to disable them later
         self.connect('activate', self.on_activate)
 
     def on_activate(self, app):
         self.start_tray_icon()
         self.window = Adw.ApplicationWindow(application=app)
         self.window.set_title("PipeWire Rate Switcher")
-        self.window.set_default_size(400, 600)
+        self.window.set_default_size(400, 620)
         self.window.set_icon_name("pw-rate-switcher")
         self.window.connect('close-request', self.on_window_close_request)
 
@@ -117,24 +119,12 @@ class AutoRateSwitcher(Adw.Application):
         content.append(stats_box)
         content.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
         
-        # 2. CONTROLS
-        # A. Auto Switch
-        auto_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        auto_box.set_halign(Gtk.Align.CENTER)
-        auto_label = Gtk.Label(label="Automatic Switching")
-        auto_label.add_css_class("heading")
-        self.auto_switch = Gtk.Switch()
-        self.auto_switch.set_active(True)
-        self.auto_switch.connect("state-set", self.on_auto_toggled)
-        auto_box.append(auto_label)
-        auto_box.append(self.auto_switch)
-        content.append(auto_box)
-
-        # B. Strict Bit-Perfect Mode (New!)
+        # 2. STRICT BIT-PERFECT MODE (Master Switch)
         strict_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         strict_box.set_halign(Gtk.Align.CENTER)
         strict_label = Gtk.Label(label="Strict Bit-Perfect Mode")
-        strict_label.set_tooltip_text("Forces hardware buffer size (Quantum) to match the music player. \nEnable this for 1:1 data transfer. Disable if audio crackles.")
+        strict_label.add_css_class("heading")
+        strict_label.set_tooltip_text("Enable exclusive 1:1 hardware matching.\nDisables manual controls.")
         self.strict_switch = Gtk.Switch()
         self.strict_switch.set_active(False)
         self.strict_switch.connect("state-set", self.on_strict_toggled)
@@ -142,11 +132,27 @@ class AutoRateSwitcher(Adw.Application):
         strict_box.append(self.strict_switch)
         content.append(strict_box)
 
-        # Manual Override
+        content.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+
+        # 3. STANDARD CONTROLS (Group to disable)
+        self.standard_controls_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
+        content.append(self.standard_controls_box)
+
+        # A. Auto Switch
+        auto_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        auto_box.set_halign(Gtk.Align.CENTER)
+        auto_label = Gtk.Label(label="Standard Auto-Switch")
+        self.auto_switch = Gtk.Switch()
+        self.auto_switch.set_active(True)
+        self.auto_switch.connect("state-set", self.on_auto_toggled)
+        auto_box.append(auto_label)
+        auto_box.append(self.auto_switch)
+        self.standard_controls_box.append(auto_box)
+
+        # B. Manual Override
         grid_label = Gtk.Label(label="Manual Override")
         grid_label.add_css_class("heading")
-        grid_label.set_margin_top(10)
-        content.append(grid_label)
+        self.standard_controls_box.append(grid_label)
 
         grid = Gtk.Grid()
         grid.set_column_spacing(10)
@@ -158,8 +164,10 @@ class AutoRateSwitcher(Adw.Application):
             btn.connect("clicked", self.on_manual_click, rate)
             btn.set_size_request(100, 40)
             grid.attach(btn, i % 2, i // 2, 1, 1)
+            self.manual_buttons.append(btn)
 
-        content.append(grid)
+        self.standard_controls_box.append(grid)
+        
         self.window.present()
         threading.Thread(target=self.monitor_pipewire, daemon=True).start()
 
@@ -172,21 +180,40 @@ class AutoRateSwitcher(Adw.Application):
         window.hide()
         return True
 
-    def on_auto_toggled(self, switch, state):
-        self.auto_mode = state
-        return False
-
     def on_strict_toggled(self, switch, state):
         self.strict_mode = state
-        print(f"[UI] Strict Bit-Perfect Mode: {state}")
-        # Reset so it re-applies immediately
+        
+        # UI LOGIC: Gray out everything else when Strict Mode is ON
+        self.standard_controls_box.set_sensitive(not state)
+        
+        if state:
+            print("[UI] Strict Mode ON: Taking full control.")
+            # Force Auto Mode ON internally (Strict implies Auto)
+            self.auto_mode = True
+            # Visual feedback
+            self.rate_label.add_css_class("accent") 
+        else:
+            print("[UI] Strict Mode OFF: Restoring controls.")
+            # Restore Auto Mode to whatever the switch says
+            self.auto_mode = self.auto_switch.get_active()
+            self.rate_label.remove_css_class("accent")
+
+        # Reset monitoring to force immediate re-scan
         self.current_rate = "Unknown" 
         return False
 
+    def on_auto_toggled(self, switch, state):
+        # Only works if Strict Mode is OFF
+        if not self.strict_mode:
+            self.auto_mode = state
+        return False
+
     def on_manual_click(self, button, rate):
-        self.auto_mode = False
-        self.auto_switch.set_active(False)
-        self.apply_rate(rate, 0) # Manual always resets quantum to 0 (Auto)
+        # Only works if Strict Mode is OFF
+        if not self.strict_mode:
+            self.auto_mode = False
+            self.auto_switch.set_active(False)
+            self.apply_rate(rate, 0)
 
     def get_dynamic_info(self, node_id):
         rate = None
@@ -218,7 +245,10 @@ class AutoRateSwitcher(Adw.Application):
                 sys.exit(0)
 
             try:
-                if not self.auto_mode:
+                # If Strict Mode is ON, we are ALWAYS in Auto Mode
+                effective_auto = self.auto_mode or self.strict_mode
+                
+                if not effective_auto:
                     time.sleep(1)
                     continue
 
@@ -263,7 +293,6 @@ class AutoRateSwitcher(Adw.Application):
                                 if not rate or str(rate) == "0": rate = dyn_rate
                                 if dyn_fmt != "Unknown": fmt = dyn_fmt
                                 
-                            # Quantum / Latency Calculation
                             lat_str = props.get('node.latency')
                             current_quantum = 0
                             latency_ms = "-- ms"
@@ -288,13 +317,12 @@ class AutoRateSwitcher(Adw.Application):
                     
                     if target_rate:
                         idle_counter = 0
-                        # Check if Rate OR Quantum needs update (if strict mode is on)
                         rate_changed = (target_rate != self.current_rate)
                         
-                        # Apply
+                        # In strict mode, we always re-apply if quantum changes
                         if rate_changed or self.strict_mode:
                             quantum_to_set = target_quantum if self.strict_mode else 0
-                            print(f"[System] Locked to {active_app_name}: {target_rate}Hz, Quantum={quantum_to_set}")
+                            print(f"[System] Locked to {active_app_name}: {target_rate}Hz")
                             self.apply_rate(target_rate, quantum_to_set)
                         
                         GLib.idle_add(self.update_ui, str(target_rate), active_app_name, str(active_format), str(active_latency))
@@ -305,8 +333,7 @@ class AutoRateSwitcher(Adw.Application):
                             if self.current_rate != "Unknown":
                                 print("[System] Idle confirmed.")
                                 self.current_rate = "Unknown"
-                                GLib.idle_add(self.update_status, "Idle (Auto Mode)")
-                                # Reset quantum to 0 (Auto) when idle
+                                GLib.idle_add(self.update_status, "Idle")
                                 subprocess.run(["pw-metadata", "-n", "settings", "0", "clock.force-quantum", "0"])
                 
                 time.sleep(1.5)
@@ -317,15 +344,11 @@ class AutoRateSwitcher(Adw.Application):
 
     def apply_rate(self, rate, quantum=0):
         try:
-            # 1. Force Rate
             subprocess.run(["pw-metadata", "-n", "settings", "0", "clock.force-rate", str(rate)])
             
-            # 2. Force Quantum (If Strict Mode is ON and quantum is valid > 0)
-            # We only force standard powers of 2 to avoid crashes (64 to 8192)
             if quantum > 0 and (quantum & (quantum-1) == 0) and quantum >= 32 and quantum <= 8192:
                  subprocess.run(["pw-metadata", "-n", "settings", "0", "clock.force-quantum", str(quantum)])
             else:
-                 # Otherwise set to 0 (Auto) to let system decide
                  subprocess.run(["pw-metadata", "-n", "settings", "0", "clock.force-quantum", "0"])
 
             self.current_rate = str(rate)
@@ -345,13 +368,6 @@ class AutoRateSwitcher(Adw.Application):
         
         self.bit_depth_label.set_label(f" {fmt_text} ")
         self.latency_label.set_label(f" {latency} ")
-        
-        # Add visual indicator for Strict Mode
-        if self.strict_mode:
-            self.rate_label.set_opacity(1.0) # Bright
-        else:
-            self.rate_label.set_opacity(0.9) 
-            
         return False
 
     def update_status(self, text):
