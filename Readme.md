@@ -1,15 +1,5 @@
 
 
-
-
-Here is the updated `README.md`.
-
-I have rewritten the **First-Time Setup** section to be much stricter. It now explicitly warns users **NOT** to use ALSA, Jack, or direct hardware outputs, as that will break the app.
-
-Copy and paste this into your `README.md`.
-
----
-
 # 🎧 PipeWire Bit-Perfect Switcher
 
 **A lightweight, automatic sample rate switcher for Audiophiles on Linux.**
