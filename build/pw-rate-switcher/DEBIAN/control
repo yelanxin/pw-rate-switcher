@@ -1,0 +1,16 @@
+Package: pw-rate-switcher
+Version: 0.1
+Architecture: all
+Maintainer: Eason <eason@example.com>
+Installed-Size: 100
+Section: utils
+Priority: optional
+Depends: python3, python3-gi, gir1.2-gtk-4.0, gir1.2-adw-1, pipewire-bin, gir1.2-ayatanaappindicator3-0.1
+Description: PipeWire Bit-Perfect Switcher
+ A utility to automatically switch PipeWire sample rate and quantum
+ to match the currently playing music for bit-perfect playback.
+ .
+ Features:
+ - Automatic Sample Rate Switching
+ - Strict Bit-Perfect Mode (Quantum Locking)
+ - Audiophile Stats (Bit Depth, Latency)
