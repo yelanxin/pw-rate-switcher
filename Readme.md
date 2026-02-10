@@ -49,7 +49,7 @@ pactl info | grep "Server Name"
 
 ### Option 1: Install via .deb (Ubuntu / Debian / Mint)
 
-Download the latest release from the **[Releases Page](https://www.google.com/search?q=../../releases)**.
+Download the latest release from the **[Releases Page](https://github.com/yelanxin/pw-rate-switcher/releases)**.
 
 Open a terminal and install it:
 
