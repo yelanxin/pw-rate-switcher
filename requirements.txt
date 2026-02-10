@@ -1,0 +1,5 @@
+# For the GUI Framework
+PyGObject>=3.42.0
+
+# Optional: if you decide to use D-Bus instead of subprocess later
+# sdbus-python>=0.2.3
