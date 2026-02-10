@@ -69,6 +69,7 @@ class AutoRateSwitcher(Adw.Application):
         self.current_rate = "Unknown"
         self.running = True
         self.auto_mode = True
+        self.strict_mode = False # Default: Off (Safer)
         self.tray_process = None
         self.connect('activate', self.on_activate)
 
@@ -76,7 +77,7 @@ class AutoRateSwitcher(Adw.Application):
         self.start_tray_icon()
         self.window = Adw.ApplicationWindow(application=app)
         self.window.set_title("PipeWire Rate Switcher")
-        self.window.set_default_size(400, 560)
+        self.window.set_default_size(400, 600)
         self.window.set_icon_name("pw-rate-switcher")
         self.window.connect('close-request', self.on_window_close_request)
 
@@ -91,27 +92,24 @@ class AutoRateSwitcher(Adw.Application):
         content.set_margin_end(20)
         root.append(content)
 
-        # 1. SAMPLE RATE (Big)
+        # 1. INFO DISPLAY
         self.rate_label = Gtk.Label(label="Scanning...")
         self.rate_label.add_css_class("title-1")
         content.append(self.rate_label)
         
-        # 2. APP NAME (Subtitle)
         self.status_label = Gtk.Label(label="Initializing...")
         self.status_label.add_css_class("title-3") 
         self.status_label.set_opacity(0.7)
         content.append(self.status_label)
         
-        # 3. DETAILED STATS (New Row)
+        # Stats Badge Row
         stats_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         stats_box.set_halign(Gtk.Align.CENTER)
         
-        # Bit Depth Badge
         self.bit_depth_label = Gtk.Label(label="-- bit")
         self.bit_depth_label.add_css_class("card")
         stats_box.append(self.bit_depth_label)
 
-        # Latency Badge
         self.latency_label = Gtk.Label(label="-- ms")
         self.latency_label.add_css_class("card")
         stats_box.append(self.latency_label)
@@ -119,7 +117,8 @@ class AutoRateSwitcher(Adw.Application):
         content.append(stats_box)
         content.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
         
-        # Auto Switch Toggle
+        # 2. CONTROLS
+        # A. Auto Switch
         auto_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         auto_box.set_halign(Gtk.Align.CENTER)
         auto_label = Gtk.Label(label="Automatic Switching")
@@ -131,7 +130,19 @@ class AutoRateSwitcher(Adw.Application):
         auto_box.append(self.auto_switch)
         content.append(auto_box)
 
-        # Manual Override Buttons
+        # B. Strict Bit-Perfect Mode (New!)
+        strict_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        strict_box.set_halign(Gtk.Align.CENTER)
+        strict_label = Gtk.Label(label="Strict Bit-Perfect Mode")
+        strict_label.set_tooltip_text("Forces hardware buffer size (Quantum) to match the music player. \nEnable this for 1:1 data transfer. Disable if audio crackles.")
+        self.strict_switch = Gtk.Switch()
+        self.strict_switch.set_active(False)
+        self.strict_switch.connect("state-set", self.on_strict_toggled)
+        strict_box.append(strict_label)
+        strict_box.append(self.strict_switch)
+        content.append(strict_box)
+
+        # Manual Override
         grid_label = Gtk.Label(label="Manual Override")
         grid_label.add_css_class("heading")
         grid_label.set_margin_top(10)
@@ -165,13 +176,19 @@ class AutoRateSwitcher(Adw.Application):
         self.auto_mode = state
         return False
 
+    def on_strict_toggled(self, switch, state):
+        self.strict_mode = state
+        print(f"[UI] Strict Bit-Perfect Mode: {state}")
+        # Reset so it re-applies immediately
+        self.current_rate = "Unknown" 
+        return False
+
     def on_manual_click(self, button, rate):
         self.auto_mode = False
         self.auto_switch.set_active(False)
-        self.apply_rate(rate, "Manual Override")
+        self.apply_rate(rate, 0) # Manual always resets quantum to 0 (Auto)
 
     def get_dynamic_info(self, node_id):
-        """Deep Scan: Returns (Rate, Format_String)."""
         rate = None
         fmt = "Unknown"
         try:
@@ -179,20 +196,14 @@ class AutoRateSwitcher(Adw.Application):
             result = subprocess.run(cmd, capture_output=True, text=True)
             output = result.stdout.strip()
             if output:
-                # 1. Get Rate
                 match_rate = re.search(r'rate.*?Int\s+(\d+)', output, re.DOTALL | re.IGNORECASE)
                 if match_rate: rate = match_rate.group(1)
                 
-                # 2. Get Format (UPDATED ROBUST REGEX)
-                # Matches: "Spa:Enum:AudioFormat:F32LE" -> extracts "F32LE"
                 match_fmt = re.search(r'AudioFormat:([a-zA-Z0-9]+)', output)
-                if match_fmt: 
-                    fmt = match_fmt.group(1)
+                if match_fmt: fmt = match_fmt.group(1)
                 else:
-                    # Backup: Try to find simple "Id ... (F32LE)"
                     match_simple = re.search(r'\((F32LE|S16LE|S24LE|S32LE|S24_32LE)\)', output)
                     if match_simple: fmt = match_simple.group(1)
-                    
         except: pass
         return rate, fmt
 
@@ -215,6 +226,7 @@ class AutoRateSwitcher(Adw.Application):
                 if result.stdout:
                     data = json.loads(result.stdout)
                     target_rate = None
+                    target_quantum = 0 # 0 means Auto
                     active_app_name = None
                     active_format = "--"
                     active_latency = "--"
@@ -231,13 +243,10 @@ class AutoRateSwitcher(Adw.Application):
 
                         if state == "running" and "Stream/Output/Audio" in media_class:
                             rate = None
-                            fmt = props.get('audio.format') 
+                            fmt = props.get('audio.format')
                             
-                            # 1. Standard Rate
-                            if props.get('audio.rate'):
-                                rate = props.get('audio.rate')
+                            if props.get('audio.rate'): rate = props.get('audio.rate')
 
-                            # 2. Fraction Rate (Spotify)
                             if not rate:
                                 node_rate = props.get('node.rate')
                                 if node_rate and isinstance(node_rate, str):
@@ -249,15 +258,16 @@ class AutoRateSwitcher(Adw.Application):
                                     elif node_rate.strip().isdigit():
                                         rate = node_rate.strip()
 
-                            # 3. Deep Scan (if info missing)
                             if not rate or str(rate) == "0" or not fmt or fmt == "Unknown":
                                 dyn_rate, dyn_fmt = self.get_dynamic_info(node_id)
                                 if not rate or str(rate) == "0": rate = dyn_rate
                                 if dyn_fmt != "Unknown": fmt = dyn_fmt
                                 
-                            # 4. Latency Calculation
+                            # Quantum / Latency Calculation
                             lat_str = props.get('node.latency')
+                            current_quantum = 0
                             latency_ms = "-- ms"
+                            
                             if lat_str and '/' in str(lat_str):
                                 try:
                                     parts = str(lat_str).split('/')
@@ -265,10 +275,12 @@ class AutoRateSwitcher(Adw.Application):
                                     freq = float(parts[1])
                                     ms = (samples / freq) * 1000
                                     latency_ms = f"{ms:.1f} ms"
+                                    current_quantum = int(samples)
                                 except: pass
 
                             if rate and str(rate).isdigit() and int(rate) > 0:
                                 target_rate = rate
+                                target_quantum = current_quantum
                                 active_app_name = app_name
                                 active_format = fmt
                                 active_latency = latency_ms
@@ -276,9 +288,14 @@ class AutoRateSwitcher(Adw.Application):
                     
                     if target_rate:
                         idle_counter = 0
-                        if target_rate != self.current_rate:
-                            print(f"[System] Locked to {active_app_name} at {target_rate}Hz")
-                            self.apply_rate(target_rate)
+                        # Check if Rate OR Quantum needs update (if strict mode is on)
+                        rate_changed = (target_rate != self.current_rate)
+                        
+                        # Apply
+                        if rate_changed or self.strict_mode:
+                            quantum_to_set = target_quantum if self.strict_mode else 0
+                            print(f"[System] Locked to {active_app_name}: {target_rate}Hz, Quantum={quantum_to_set}")
+                            self.apply_rate(target_rate, quantum_to_set)
                         
                         GLib.idle_add(self.update_ui, str(target_rate), active_app_name, str(active_format), str(active_latency))
                     
@@ -289,6 +306,8 @@ class AutoRateSwitcher(Adw.Application):
                                 print("[System] Idle confirmed.")
                                 self.current_rate = "Unknown"
                                 GLib.idle_add(self.update_status, "Idle (Auto Mode)")
+                                # Reset quantum to 0 (Auto) when idle
+                                subprocess.run(["pw-metadata", "-n", "settings", "0", "clock.force-quantum", "0"])
                 
                 time.sleep(1.5)
 
@@ -296,9 +315,19 @@ class AutoRateSwitcher(Adw.Application):
                 print(f"[Error] {e}")
                 time.sleep(5)
 
-    def apply_rate(self, rate):
+    def apply_rate(self, rate, quantum=0):
         try:
+            # 1. Force Rate
             subprocess.run(["pw-metadata", "-n", "settings", "0", "clock.force-rate", str(rate)])
+            
+            # 2. Force Quantum (If Strict Mode is ON and quantum is valid > 0)
+            # We only force standard powers of 2 to avoid crashes (64 to 8192)
+            if quantum > 0 and (quantum & (quantum-1) == 0) and quantum >= 32 and quantum <= 8192:
+                 subprocess.run(["pw-metadata", "-n", "settings", "0", "clock.force-quantum", str(quantum)])
+            else:
+                 # Otherwise set to 0 (Auto) to let system decide
+                 subprocess.run(["pw-metadata", "-n", "settings", "0", "clock.force-quantum", "0"])
+
             self.current_rate = str(rate)
         except Exception as e:
             pass
@@ -307,8 +336,6 @@ class AutoRateSwitcher(Adw.Application):
         self.rate_label.set_label(f"{rate} Hz")
         self.status_label.set_label(f"{app_name}")
         
-        # Format Translation
-        # Most common PipeWire internal formats:
         if fmt == "F32LE": fmt_text = "32-bit Float"
         elif fmt == "S32LE": fmt_text = "32-bit Int"
         elif fmt == "S24LE": fmt_text = "24-bit"
@@ -318,6 +345,13 @@ class AutoRateSwitcher(Adw.Application):
         
         self.bit_depth_label.set_label(f" {fmt_text} ")
         self.latency_label.set_label(f" {latency} ")
+        
+        # Add visual indicator for Strict Mode
+        if self.strict_mode:
+            self.rate_label.set_opacity(1.0) # Bright
+        else:
+            self.rate_label.set_opacity(0.9) 
+            
         return False
 
     def update_status(self, text):
