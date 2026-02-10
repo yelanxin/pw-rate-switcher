@@ -2,7 +2,6 @@
 
 **A lightweight, automatic sample rate switcher for Audiophiles on Linux.**
 
-*(Replace this line with a screenshot of your app)*
 
 **PipeWire Rate Switcher** detects the sample rate of your currently playing music (Spotify, Chrome, MPD, etc.) and automatically adjusts the PipeWire clock to match it. This prevents audio resampling, ensuring a **Bit-Perfect** audio path to your DAC.
 
