@@ -2,7 +2,9 @@
 
 **A lightweight, automatic sample rate switcher for Audiophiles on Linux.**
 
-![App Screenshot](https://github.com/yelanxin/pw-rate-switcher/raw/main/Screenshot%20from%202026-02-09%2023-20-57.png)
+<a href="https://github.com/yelanxin/pw-rate-switcher/raw/main/Screenshot%20from%202026-02-09%2023-20-57.png" target="_blank">
+  <img src="https://github.com/yelanxin/pw-rate-switcher/raw/main/Screenshot%20from%202026-02-09%2023-20-57.png" width="100%" alt="Click to zoom in">
+</a>
 
 **PipeWire Rate Switcher** detects the sample rate of your currently playing music (Spotify, Chrome, MPD, etc.) and automatically adjusts the PipeWire clock to match it. This prevents audio resampling, ensuring a **Bit-Perfect** audio path to your DAC.
 
