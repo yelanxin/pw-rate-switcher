@@ -7,6 +7,8 @@
 <a href="https://github.com/yelanxin/pw-rate-switcher/raw/main/Screenshot%20from%202026-02-09%2023-20-57.png" target="_blank">
   <img src="https://github.com/yelanxin/pw-rate-switcher/raw/main/Screenshot%20from%202026-02-09%2023-20-57.png" width="30%" alt="Click to zoom in">
 </a>
+
+
 ## ✨ Features
 
 * **Automatic Sample Rate Switching:** Instantly switches between 44.1kHz, 48kHz, 96kHz, 192kHz, and more based on the active stream.
