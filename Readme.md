@@ -1,13 +1,40 @@
+
+
+
+
+Here is the updated `README.md`.
+
+I have rewritten the **First-Time Setup** section to be much stricter. It now explicitly warns users **NOT** to use ALSA, Jack, or direct hardware outputs, as that will break the app.
+
+Copy and paste this into your `README.md`.
+
+---
+
 # 🎧 PipeWire Bit-Perfect Switcher
 
 **A lightweight, automatic sample rate switcher for Audiophiles on Linux.**
-
-**PipeWire Rate Switcher** detects the sample rate of your currently playing music (Spotify, Chrome, MPD, etc.) and automatically adjusts the PipeWire clock to match it. This prevents audio resampling, ensuring a **Bit-Perfect** audio path to your DAC.
 
 <a href="https://github.com/yelanxin/pw-rate-switcher/raw/main/Screenshot%20from%202026-02-09%2023-20-57.png" target="_blank">
   <img src="https://github.com/yelanxin/pw-rate-switcher/raw/main/Screenshot%20from%202026-02-09%2023-20-57.png" width="50%" alt="Click to zoom in">
 </a>
 
+**PipeWire Rate Switcher** detects the sample rate of your currently playing music (Spotify, Chrome, MPD, etc.) and automatically adjusts the PipeWire clock to match it. This prevents audio resampling, ensuring a **Bit-Perfect** audio path to your DAC.
+
+## 📋 Prerequisites
+
+This app requires **PipeWire** to be your active sound server. It controls the PipeWire core directly.
+
+To check if your system is compatible, run this in a terminal:
+
+```bash
+pactl info | grep "Server Name"
+
+```
+
+* **✅ Compatible:** `PulseAudio (on PipeWire x.x.x)`
+*(This means you are using PipeWire with the PulseAudio compatibility layer. This is perfect.)*
+* **❌ Incompatible:** `PulseAudio`
+*(This means you are using the old legacy sound server. This app will not work.)*
 
 ## ✨ Features
 
@@ -46,12 +73,28 @@ sudo apt install python3 python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 pipewire-bin gir
 
 2. **Clone & Run:**
 ```bash
-git clone https://github.com/YOUR_USERNAME/pw-rate-switcher.git
+git clone https://github.com/yelanxin/pw-rate-switcher.git
 cd pw-rate-switcher
 chmod +x pw-rate-switcher.py
 ./pw-rate-switcher.py
 
 ```
+
+
+
+## ⚙️ First-Time Setup (Important!)
+
+To make this app work, you **MUST** configure your music player correctly.
+
+1. **Set Audio Output to "PulseAudio" or "PipeWire"**
+* In your music player (Strawberry, Deadbeef, MPD, etc.), go to settings and select **PulseAudio** or **PipeWire** as the output plugin.
+* **⛔ DO NOT USE:** ALSA, ALSA Direct, Hardware Device (hw:0,0), or Jack.
+* *Why?* If you select "ALSA Direct", the player steals the hardware from PipeWire. This prevents the app from controlling the clock.
+
+
+2. **Verify System Output:**
+* Open your OS **Settings** -> **Sound**.
+* Select your DAC/Headphones here. The app will automatically control whatever device is selected in the system settings.
 
 
 
@@ -77,6 +120,9 @@ Toggle the **"Strict Bit-Perfect Mode"** switch for critical listening.
 Click any of the Hz buttons (44.1kHz, 96kHz, etc.) to force the system to a specific rate. This disables automatic switching until you re-enable it.
 
 ## ❓ FAQ
+
+**Q: Does this app work with PulseAudio?**
+**A:** No, it works with **PipeWire-Pulse**. Modern distros use PipeWire to "imitate" PulseAudio so your apps work, but the backend is PipeWire. This app talks to that backend. If you are on an old distro with legacy PulseAudio, this app cannot control it.
 
 **Q: Why does it say "32-bit Float" when playing a 16-bit file?**
 **A:** This is normal PipeWire behavior. PipeWire uses a 32-bit Floating Point container for all internal mixing to preserve quality and volume precision. Your DAC still receives the audio data perfectly intact (lossless).
